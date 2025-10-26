@@ -5,6 +5,7 @@ import json
 import tempfile
 import geemap.foliumap as geemap
 import datetime
+from huggingface_hub import InferenceClient
 
 # --- 1. AUTHENTICATE AND INITIALIZE EARTH ENGINE ---
 # This block must be at the top.
@@ -128,30 +129,88 @@ def get_historical_ndvi(_geometry):
 
 # --- 4. AI REASONING AND PREDICTION ---
 def k2_think_reasoning(ndvi_val, soil_val, region):
-    # This logic now uses real data instead of sliders
-    trace = [
-        f"Initializing analysis for **{region}**.",
-        f"Live Satellite Data:",
-        f"  - Average Vegetation Index (NDVI): **{ndvi_val:.3f}**",
-        f"  - Average Soil Moisture (SSM): **{soil_val:.2f} mm**"
-    ]
+    """K2-Think AI Reasoning for Environmental Analysis"""
     
-    risk = "Low"
-    if ndvi_val < 0.1 or soil_val < 10:
-        risk = "High"
-        trace.append("CRITICAL: Vegetation health and soil moisture are dangerously low.")
-    elif ndvi_val < 0.15 or soil_val < 20:
-        risk = "Medium"
-        trace.append("WARNING: Indicators show moderate stress on the ecosystem.")
-    else:
-        trace.append("STABLE: Current environmental indicators are within a healthy range.")
+    prompt = f"""You are an environmental scientist analyzing desertification risk in the UAE.
+
+Region: {region}
+Current Environmental Data:
+- Vegetation Index (NDVI): {ndvi_val:.4f} (range: -1 to 1, where >0.2 is healthy vegetation)
+- Soil Moisture: {soil_val:.2f} mm (typical range: 5-30 mm)
+
+Task: Analyze this data step-by-step and provide:
+1. Desertification risk assessment (High/Medium/Low)
+2. Your reasoning process showing how you reached this conclusion
+3. Scientific explanation of the environmental conditions
+4. Specific recommendations for land management
+
+Think through this carefully and show your reasoning."""
+
+    try:
+        client = InferenceClient(
+            model="LLM360/K2-Think",
+            token=st.secrets.get("HF_TOKEN", "")
+        )
         
-    recommendations = {
-        "High": "- **Urgent Action:** Implement immediate water conservation measures.\n- **Intervention:** Begin soil restoration projects and use of drought-resistant seeds.",
-        "Medium": "- **Monitoring:** Increase frequency of soil and vegetation monitoring.\n- **Precaution:** Promote water-saving agricultural techniques.",
-        "Low": "- **Maintenance:** Continue sustainable land management practices.\n- **Oversight:** Maintain regular environmental monitoring schedules."
-    }
-    return risk, trace, recommendations[risk]
+        messages = [{"role": "user", "content": prompt}]
+        
+        response = client.chat_completion(
+            messages=messages,
+            max_tokens=2048,
+            temperature=0.7
+        )
+        
+        ai_response = response.choices[0].message.content
+        
+        # Parse risk level
+        risk = "Medium"
+        response_lower = ai_response.lower()
+        if "high risk" in response_lower or "severe" in response_lower:
+            risk = "High"
+        elif "low risk" in response_lower or "stable" in response_lower:
+            risk = "Low"
+        
+        # Format trace
+        trace = [
+            f"🤖 **K2-Think Analysis for {region}**",
+            f"📊 **Input Data:**",
+            f"  - NDVI: **{ndvi_val:.3f}**",
+            f"  - Soil Moisture: **{soil_val:.2f} mm**",
+            "",
+            "🧠 **K2-Think Reasoning:**",
+            ai_response
+        ]
+        
+        return risk, trace, ai_response
+        
+    except Exception as e:
+        st.warning(f"⚠️ K2-Think unavailable, using fallback: {str(e)}")
+        
+        # Fallback logic (your current rule-based system)
+        trace = [
+            f"Initializing analysis for **{region}**.",
+            f"Live Satellite Data:",
+            f"  - Average Vegetation Index (NDVI): **{ndvi_val:.3f}**",
+            f"  - Average Soil Moisture (SSM): **{soil_val:.2f} mm**"
+        ]
+        
+        risk = "Low"
+        if ndvi_val < 0.1 or soil_val < 10:
+            risk = "High"
+            trace.append("CRITICAL: Vegetation health and soil moisture are dangerously low.")
+        elif ndvi_val < 0.15 or soil_val < 20:
+            risk = "Medium"
+            trace.append("WARNING: Indicators show moderate stress on the ecosystem.")
+        else:
+            trace.append("STABLE: Current environmental indicators are within a healthy range.")
+        
+        recommendations = {
+            "High": "- **Urgent Action:** Implement immediate water conservation measures.\n- **Intervention:** Begin soil restoration projects and use of drought-resistant seeds.",
+            "Medium": "- **Monitoring:** Increase frequency of soil and vegetation monitoring.\n- **Precaution:** Promote water-saving agricultural techniques.",
+            "Low": "- **Maintenance:** Continue sustainable land management practices.\n- **Oversight:** Maintain regular environmental monitoring schedules."
+        }
+        
+        return risk, trace, recommendations[risk]
 
 # --- 5. MAIN APP LAYOUT AND VISUALIZATION ---
 st.title(f"K2-DesertGuard: Live Environmental Monitor for {region_name}")
