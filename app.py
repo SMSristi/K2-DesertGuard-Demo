@@ -1,118 +1,180 @@
 import streamlit as st
 import pandas as pd
-import random
+import ee
+import json
+import tempfile
+import geemap.foliumap as geemap
+import datetime
+
+# --- 1. AUTHENTICATE AND INITIALIZE EARTH ENGINE ---
+# This block must be at the top.
+# It securely loads your GEE credentials from Streamlit's secrets.
+try:
+    service_account_info = st.secrets["google_earth_engine"]
+    service_account_email = service_account_info["client_email"]
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(dict(service_account_info), f)
+        temp_json_path = f.name
+
+    credentials = ee.ServiceAccountCredentials(service_account_email, temp_json_path)
+    ee.Initialize(credentials)
+except Exception as e:
+    st.error(
+        "Google Earth Engine authentication failed. "
+        "Please ensure your GEE secrets are configured correctly in Streamlit."
+    )
+    st.stop()
 
 
-# Sidebar: Region & Inputs
-st.sidebar.title("K2-DesertGuard Demo")
-region = st.sidebar.selectbox(
-    "Select UAE Region", 
-    ["Abu Dhabi", "Dubai", "Sharjah", "Al Ain"]
-)
-soil_moisture = st.sidebar.slider("Soil Moisture Level (%)", 0, 100, 50)
-water_usage = st.sidebar.slider("Water Usage Index", 0, 100, 30)
-recent_rainfall = st.sidebar.slider("Recent Rainfall (mm)", 0, 100, 10)
+# --- 2. APP CONFIGURATION AND SIDEBAR ---
+st.set_page_config(layout="wide")
+st.sidebar.title("K2-DesertGuard Controller")
 
-# Main: Map & Prediction
-st.title(f"Desertification Risk Monitor – {region}")
-
+# Region selection
 region_coords = {
     "Abu Dhabi": [24.466667, 54.366667],
     "Dubai": [25.276987, 55.296249],
     "Sharjah": [25.34626, 55.42093],
-    "Al Ain": [24.2075, 55.7447]
+    "Al Ain": [24.2075, 55.7447],
 }
-
-lat, lon = region_coords[region]
-
-# Interactive Map
-map_data = pd.DataFrame({'lat': [lat], 'lon': [lon]})
-st.map(map_data, zoom=8)
-
-st.caption("UAE Regional Map (location marker is simulated for demo)")
-
-# Google Maps Link
-google_maps_url = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
-st.markdown(f"[View {region} on Google Maps]({google_maps_url})")
+region_name = st.sidebar.selectbox("Select UAE Region", list(region_coords.keys()))
+lat, lon = region_coords[region_name]
+map_center = [lat, lon]
+region_geometry = ee.Geometry.Point(lon, lat).buffer(20000) # 20km buffer for analysis
 
 
+# --- 3. EARTH ENGINE DATA ANALYSIS FUNCTIONS ---
+# Use Streamlit's caching to avoid re-running GEE queries on every interaction.
+@st.cache_data
+def get_live_data(_geometry):
+    # Fetch real-time data for soil moisture and NDVI
+    soil_moisture_collection = ee.ImageCollection("NASA_USDA/HSL/SMAP10KM_soil_moisture")
+    latest_soil_moisture_img = soil_moisture_collection.sort("system:time_start", False).first()
+    
+    sentinel_collection = ee.ImageCollection("COPERNICUS/S2_SR").filterBounds(_geometry)
+    latest_sentinel_img = sentinel_collection.filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 20)).sort("system:time_start", False).first()
+    
+    # Calculate average values over the region
+    avg_ndvi = latest_sentinel_img.normalizedDifference(['B8', 'B4']).reduceRegion(
+        reducer=ee.Reducer.mean(), geometry=_geometry, scale=30
+    ).get('nd')
+    
+    avg_soil_moisture = latest_soil_moisture_img.select('ssm').reduceRegion(
+        reducer=ee.Reducer.mean(), geometry=_geometry, scale=10000
+    ).get('ssm')
+    
+    # ee.Number objects must be evaluated with .getInfo()
+    return avg_ndvi.getInfo(), avg_soil_moisture.getInfo()
 
-# Simulated 'chain-of-thought' reasoning for demo
-def k2_think_reasoning(soil, water, rain):
+@st.cache_data
+def get_historical_ndvi(_geometry):
+    # Create a time-series chart of NDVI over the last 3 years
+    collection = ee.ImageCollection("COPERNICUS/S2_SR").filterBounds(_geometry)
+    
+    def clip_and_add_ndvi(image):
+        return image.normalizedDifference(['B8', 'B4']).rename('NDVI').copyProperties(image, ['system:time_start'])
+
+    ndvi_collection = collection.map(clip_and_add_ndvi)
+    
+    # Generate time-series data
+    time_series = ndvi_collection.getRegion(_geometry, scale=1000).getInfo()
+    
+    # Convert to Pandas DataFrame
+    df = pd.DataFrame(time_series[1:], columns=time_series[0])
+    df['datetime'] = pd.to_datetime(df['time'], unit='ms')
+    df = df.set_index('datetime')
+    # Resample to get monthly average
+    monthly_ndvi = df['NDVI'].resample('M').mean().dropna()
+    return monthly_ndvi
+
+
+# --- 4. AI REASONING AND PREDICTION ---
+def k2_think_reasoning(ndvi_val, soil_val, region):
+    # This logic now uses real data instead of sliders
     trace = [
-        f"Analyzed satellite imagery for {region}.",
-        f"Checked soil moisture: {soil}%.",
-        f"Assessed water usage index: {water}.",
-        f"Measured recent rainfall: {rain} mm.",
+        f"Initializing analysis for **{region}**.",
+        f"Live Satellite Data:",
+        f"  - Average Vegetation Index (NDVI): **{ndvi_val:.3f}**",
+        f"  - Average Soil Moisture (SSM): **{soil_val:.2f} mm**"
     ]
-    # Simulated logic
-    if soil < 30 and water > 70 and rain < 20:
-        trace.append("Detected high water demand, low moisture, minimal rainfall.")
+    
+    risk = "Low"
+    if ndvi_val < 0.1 or soil_val < 10:
         risk = "High"
-        reasons = (
-            "- Immediate reduction in water usage needed.\n"
-            "- Switch to drought-resistant crops.\n"
-            "- Community awareness and soil restoration programs."
-        )
-    elif soil < 50 or water > 50:
-        trace.append("Moderate stress signals: watch trends closely.")
+        trace.append("CRITICAL: Vegetation health and soil moisture are dangerously low.")
+    elif ndvi_val < 0.15 or soil_val < 20:
         risk = "Medium"
-        reasons = (
-            "- Maintain irrigation controls.\n"
-            "- Monthly soil health monitoring.\n"
-            "- Encourage water-saving practices."
-        )
+        trace.append("WARNING: Indicators show moderate stress on the ecosystem.")
     else:
-        trace.append("Conditions stable; risk factors low.")
-        risk = "Low"
-        reasons = (
-            "- Maintain current sustainable practices.\n"
-            "- Regular soil and water monitoring.\n"
-            "- Support land conservation initiatives."
-        )
-    return risk, trace, reasons
+        trace.append("STABLE: Current environmental indicators are within a healthy range.")
+        
+    recommendations = {
+        "High": "- **Urgent Action:** Implement immediate water conservation measures.\n- **Intervention:** Begin soil restoration projects and use of drought-resistant seeds.",
+        "Medium": "- **Monitoring:** Increase frequency of soil and vegetation monitoring.\n- **Precaution:** Promote water-saving agricultural techniques.",
+        "Low": "- **Maintenance:** Continue sustainable land management practices.\n- **Oversight:** Maintain regular environmental monitoring schedules."
+    }
+    return risk, trace, recommendations[risk]
 
+# --- 5. MAIN APP LAYOUT AND VISUALIZATION ---
+st.title(f"K2-DesertGuard: Live Environmental Monitor for {region_name}")
+st.caption("Powered by Google Earth Engine & Real-Time Satellite Imagery")
 
-risk_level, reasoning_trace, recommendations = k2_think_reasoning(soil_moisture, water_usage, recent_rainfall)
+# Fetch and process data
+avg_ndvi_value, avg_soil_moisture_value = get_live_data(region_geometry)
+risk_level, reasoning_trace, recommendations = k2_think_reasoning(avg_ndvi_value, avg_soil_moisture_value, region_name)
 
+# Display live metrics
+col_a, col_b, col_c = st.columns(3)
+col_a.metric("Desertification Risk", risk_level)
+col_b.metric("Avg. Vegetation (NDVI)", f"{avg_ndvi_value:.3f}")
+col_c.metric("Avg. Soil Moisture", f"{avg_soil_moisture_value:.2f} mm")
 
-# Display Prediction
-icon = { "High":"🟥", "Medium":"🟨", "Low":"🟩" }
-st.subheader(f"{icon[risk_level]} Desertification Risk Prediction: {risk_level}")
+st.markdown("---")
 
+# Map visualizations
+col1, col2 = st.columns(2)
 
-# FIXED: Line chart with proper DataFrame format
-years = [2025, 2026, 2027, 2028, 2029]
-risk_scores = {
-    "Low": [2, 3, 2, 2, 3],
-    "Medium": [5, 6, 7, 6, 7],
-    "High": [8, 9, 9, 10, 10]
-}[risk_level]
+with col1:
+    st.markdown("#### Live Vegetation Health (NDVI)")
+    # GEE logic for NDVI map
+    image = ee.ImageCollection("COPERNICUS/S2_SR").filterBounds(region_geometry).filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 10)).sort("system:time_start", False).first()
+    ndvi = image.normalizedDifference(['B8', 'B4'])
+    ndvi_palette = ["#ff0000", "#ffff00", "#00ff00"]
+    ndvi_vis_params = {"min": 0.0, "max": 0.5, "palette": ndvi_palette}
+    
+    Map_NDVI = geemap.Map(location=map_center, zoom_start=9)
+    Map_NDVI.addLayer(ndvi, ndvi_vis_params, "Live NDVI")
+    Map_NDVI.add_colorbar(colors=ndvi_palette, vmin=0.0, vmax=0.5, caption="Vegetation Density")
+    Map_NDVI.to_streamlit(height=400)
 
-# Create DataFrame with proper structure for line chart
-chart_data = pd.DataFrame({
-    "Year": years,
-    "Risk Score": risk_scores
-})
-st.line_chart(chart_data, x="Year", y="Risk Score", use_container_width=True)
+with col2:
+    st.markdown("#### Land Use & Land Cover")
+    # GEE logic for Land Cover map
+    landcover = ee.ImageCollection("ESA/WorldCover/v100").first()
+    Map_LULC = geemap.Map(location=map_center, zoom_start=9)
+    Map_LULC.addLayer(landcover, {}, "Land Cover")
+    Map_LULC.add_legend(title="ESA Land Cover", builtin_legend="ESA_WorldCover")
+    Map_LULC.to_streamlit(height=400)
 
+st.markdown("---")
 
-# Reasoning Trace Panel with Expand/Collapse
-with st.expander("See AI Reasoning Trace"):
+# Historical chart and AI reasoning
+col3, col4 = st.columns([2, 1])
+
+with col3:
+    st.markdown("#### Historical Vegetation Trend (3 Years)")
+    historical_ndvi_data = get_historical_ndvi(region_geometry)
+    st.line_chart(historical_ndvi_data)
+
+with col4:
+    st.markdown("#### AI Reasoning")
     for step in reasoning_trace:
-        st.write(f"• {step}")
+        st.write(step)
+    
+    st.markdown("#### Recommendations")
+    st.info(recommendations)
 
+st.sidebar.markdown("---")
+st.sidebar.info("This dashboard uses real satellite data from Google Earth Engine. Select a region to update the analysis.")
 
-# Scenario Testing Panel
-st.markdown("#### What-If Scenario")
-st.info(f"Try adjusting soil moisture, water use, or rainfall in the sidebar to see impact.")
-
-
-# Recommendations Section
-st.markdown("### AI-Generated Recommendations")
-for rec in recommendations.split("\n"):
-    if rec.strip():  # Only show non-empty lines
-        st.write(rec)
-
-
-st.caption("Data labels: Satellite Imagery, Govt Water Data, Local Weather Sensors (simulated for demo)")
