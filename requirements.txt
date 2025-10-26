@@ -2,3 +2,4 @@ earthengine-api
 geemap
 streamlit
 pandas
+huggingface-hub

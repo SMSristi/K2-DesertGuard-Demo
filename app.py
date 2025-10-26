@@ -205,7 +205,7 @@ Think through this carefully and show your reasoning."""
             trace.append("STABLE: Current environmental indicators are within a healthy range.")
         
         recommendations = {
-            "High": "- *Urgent Action:** Implement immediate water conservation measures.\n- **Intervention:** Begin soil restoration projects and use of drought-resistant seeds.",
+            "High": "- **Urgent Action:** Implement immediate water conservation measures.\n- **Intervention:** Begin soil restoration projects and use of drought-resistant seeds.",
             "Medium": "- **Monitoring:** Increase frequency of soil and vegetation monitoring.\n- **Precaution:** Promote water-saving agricultural techniques.",
             "Low": "- **Maintenance:** Continue sustainable land management practices.\n- **Oversight:** Maintain regular environmental monitoring schedules."
         }
