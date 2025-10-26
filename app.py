@@ -4,7 +4,7 @@ import random
 
 
 # Sidebar: Region & Inputs
-st.sidebar.title("K2-DesertGuard Demo")
+st.sidebar.title("K2-SandSense Demo")
 st.markdown("*Powered by K2 Think – AI-driven environmental analytics platform.*")
 
 region = st.sidebar.selectbox(
