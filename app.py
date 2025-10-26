@@ -13,6 +13,8 @@ soil_moisture = st.sidebar.slider("Soil Moisture Level (%)", 0, 100, 50)
 water_usage = st.sidebar.slider("Water Usage Index", 0, 100, 30)
 recent_rainfall = st.sidebar.slider("Recent Rainfall (mm)", 0, 100, 10)
 
+# Main: Map & Prediction
+st.title(f"Desertification Risk Monitor – {region}")
 
 region_coords = {
     "Abu Dhabi": [24.466667, 54.366667],
