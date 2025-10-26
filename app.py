@@ -13,6 +13,7 @@ soil_moisture = st.sidebar.slider("Soil Moisture Level (%)", 0, 100, 50)
 water_usage = st.sidebar.slider("Water Usage Index", 0, 100, 30)
 recent_rainfall = st.sidebar.slider("Recent Rainfall (mm)", 0, 100, 10)
 
+
 # Main: Map & Prediction
 st.title(f"Desertification Risk Monitor – {region}")
 
@@ -70,6 +71,8 @@ def k2_think_reasoning(soil, water, rain):
             "- Regular soil and water monitoring.\n"
             "- Support land conservation initiatives."
         )
+
+
     return risk, trace, reasons
 
 
