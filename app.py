@@ -145,7 +145,13 @@ with col1:
     
     Map_NDVI = geemap.Map(location=map_center, zoom_start=9)
     Map_NDVI.addLayer(ndvi, ndvi_vis_params, "Live NDVI")
-    Map_NDVI.add_colorbar(colors=ndvi_palette, vmin=0.0, vmax=0.5, caption="Vegetation Density")
+    # Fixed: use add_colormap instead of add_colorbar
+    Map_NDVI.add_colormap(
+        vmin=0.0, 
+        vmax=0.5, 
+        palette=ndvi_palette, 
+        label="Vegetation Density"
+    )
     Map_NDVI.to_streamlit(height=400)
 
 with col2:
