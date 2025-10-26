@@ -100,7 +100,6 @@ chart_data = pd.DataFrame({
     "Risk Score": risk_scores
 })
 st.line_chart(chart_data, x="Year", y="Risk Score", use_container_width=True)
-st.line_chart(chart_data.set_index("Year"), use_container_width=True)
 st.caption(f"Risk trend visualization for {region}")
 
 
