@@ -15,7 +15,7 @@ recent_rainfall = st.sidebar.slider("Recent Rainfall (mm)", 0, 100, 10)
 st.title(f"Desertification Risk Monitor – {region}")
 
 st.image(
-    "https://commons.wikimedia.org/wiki/File:UAE_Regions_map.png",
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/UAE_Regions_map.png/1200px-UAE_Regions_map.png?20140916094820",
     caption="UAE Regional Map (Satellite Source: Simulated)"
 )
 
