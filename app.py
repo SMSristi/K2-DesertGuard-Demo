@@ -29,6 +29,18 @@ except Exception as e:
 st.set_page_config(layout="wide")
 st.sidebar.title("K2-DesertGuard Controller")
 
+# Region selection
+region_coords = {
+    "Abu Dhabi": [24.466667, 54.366667],
+    "Dubai": [25.276987, 55.296249],
+    "Sharjah": [25.34626, 55.42093],
+    "Al Ain": [24.2075, 55.7447],
+}
+region_name = st.sidebar.selectbox("Select UAE Region", list(region_coords.keys()))
+lat, lon = region_coords[region_name]
+map_center = [lat, lon]
+region_geometry = ee.Geometry.Point(lon, lat).buffer(20000)
+
 # AI Model selection in sidebar
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🤖 AI Model Selection")
@@ -51,17 +63,6 @@ st.sidebar.info("""
 - **K2-Think variants**: Attempts direct K2-Think access
 """)
 
-# Region selection
-region_coords = {
-    "Abu Dhabi": [24.466667, 54.366667],
-    "Dubai": [25.276987, 55.296249],
-    "Sharjah": [25.34626, 55.42093],
-    "Al Ain": [24.2075, 55.7447],
-}
-region_name = st.sidebar.selectbox("Select UAE Region", list(region_coords.keys()))
-lat, lon = region_coords[region_name]
-map_center = [lat, lon]
-region_geometry = ee.Geometry.Point(lon, lat).buffer(20000)
 
 
 # --- 3. EARTH ENGINE DATA ANALYSIS FUNCTIONS ---
@@ -403,3 +404,11 @@ with col4:
 
 st.sidebar.markdown("---")
 st.sidebar.info("This dashboard uses real satellite data from Google Earth Engine. Select a region to update the analysis.")
+st.sidebar.info("""
+**ℹ️ About Models:**
+- **Qwen2.5-32B**: Base model for K2-Think with excellent reasoning
+- **Llama-3.3-70B**: Larger model with strong capabilities
+- **K2-Think variants**: Attempts direct K2-Think access
+
+**Note:** Using Cerebras API as Hugging Face Inference API doesn't support K2-Think's 32B model size for free tier deployment.
+""")
