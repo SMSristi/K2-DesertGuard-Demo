@@ -6,6 +6,8 @@ import tempfile
 import geemap.foliumap as geemap
 import datetime
 import requests
+from huggingface_hub import InferenceClient
+
 
 # --- 1. AUTHENTICATE AND INITIALIZE EARTH ENGINE ---
 # This block must be at the top.
@@ -125,9 +127,124 @@ def get_historical_ndvi(_geometry):
         values = [baseline + np.random.uniform(-0.03, 0.03) for _ in range(12)]
         return pd.Series(values, index=dates)
 
+#Add multiple K2-Think model name attempts
+# def k2_think_reasoning(ndvi_val, soil_val, region):
+#     """K2-Think AI Reasoning via Cerebras API"""
+    
+#     prompt = f"""You are an environmental scientist analyzing desertification risk in the UAE.
+
+# Region: {region}
+# Current Environmental Data:
+# - Vegetation Index (NDVI): {ndvi_val:.4f} (range: -1 to 1, where >0.2 is healthy vegetation)
+# - Soil Moisture: {soil_val:.2f} mm (typical range: 5-30 mm)
+
+# Task: Provide step-by-step analysis:
+# 1. Desertification risk level (High/Medium/Low)
+# 2. Your reasoning process
+# 3. Scientific explanation
+# 4. Specific recommendations
+
+# Analysis:"""
+
+#     try:
+#         api_key = st.secrets.get("cerebras", {}).get("api_key", "")
+        
+#         if not api_key:
+#             raise Exception("Cerebras API key not configured")
+        
+#         # Try multiple model name variants
+#         model_names = ["k2-think", "k2think", "K2-Think", "llm360/k2-think", "llama3.3-70b"]
+        
+#         last_error = None
+#         for model_name in model_names:
+#             try:
+#                 response = requests.post(
+#                     "https://api.cerebras.ai/v1/chat/completions",
+#                     headers={
+#                         "Authorization": f"Bearer {api_key}",
+#                         "Content-Type": "application/json"
+#                     },
+#                     json={
+#                         "model": model_name,
+#                         "messages": [
+#                             {"role": "system", "content": "You are an expert environmental scientist specializing in desertification analysis with strong reasoning capabilities."},
+#                             {"role": "user", "content": prompt}
+#                         ],
+#                         "max_tokens": 2048,
+#                         "temperature": 0.7
+#                     },
+#                     timeout=30
+#                 )
+                
+#                 if response.status_code == 200:
+#                     result = response.json()
+#                     ai_response = result['choices'][0]['message']['content']
+                    
+#                     # Parse risk level
+#                     risk = "Medium"
+#                     response_lower = ai_response.lower()
+#                     if any(word in response_lower for word in ["high risk", "severe", "critical"]):
+#                         risk = "High"
+#                     elif any(word in response_lower for word in ["low risk", "stable", "minimal"]):
+#                         risk = "Low"
+                    
+#                     # Format trace
+#                     model_display = "K2-Think" if "k2" in model_name.lower() else model_name
+#                     trace = [
+#                         f"🤖 **{model_display} Analysis for {region}**",
+#                         f"📊 **Input Data:**",
+#                         f"  - NDVI: **{ndvi_val:.3f}**",
+#                         f"  - Soil Moisture: **{soil_val:.2f} mm**",
+#                         "",
+#                         "🧠 **AI Reasoning:**",
+#                         ai_response
+#                     ]
+                    
+#                     return risk, trace, ai_response
+#                 else:
+#                     last_error = f"Model {model_name}: Status {response.status_code}"
+#                     continue  # Try next model
+                    
+#             except Exception as e:
+#                 last_error = f"Model {model_name}: {str(e)}"
+#                 continue  # Try next model
+        
+#         # If all models failed, raise the last error
+#         if last_error:
+#             raise Exception(f"All models failed. Last error: {last_error}")
+            
+#     except Exception as e:
+#         st.warning(f"⚠️ K2-Think unavailable: {str(e)}")
+        
+#         # Fallback to rule-based system
+#         trace = [
+#             f"Analyzing {region}...",
+#             f"NDVI: {ndvi_val:.3f}, Soil Moisture: {soil_val:.2f} mm"
+#         ]
+        
+#         risk = "Low"
+#         if ndvi_val < 0.1 or soil_val < 10:
+#             risk = "High"
+#             trace.append("⚠️ Critical vegetation stress detected")
+#         elif ndvi_val < 0.15 or soil_val < 20:
+#             risk = "Medium"
+#             trace.append("⚠️ Moderate environmental stress")
+#         else:
+#             trace.append("✅ Stable conditions")
+        
+#         recommendations = {
+#             "High": "**Urgent interventions:** Water conservation, soil restoration, drought-resistant planting",
+#             "Medium": "**Preventive actions:** Increase monitoring, promote water efficiency, protect vegetation",
+#             "Low": "**Maintenance:** Continue sustainable practices, regular monitoring"
+#         }[risk]
+        
+#         return risk, trace, recommendations
+
+
+from huggingface_hub import InferenceClient
 
 def k2_think_reasoning(ndvi_val, soil_val, region):
-    """K2-Think AI Reasoning via Cerebras API"""
+    """K2-Think AI Reasoning via Hugging Face Inference"""
     
     prompt = f"""You are an environmental scientist analyzing desertification risk in the UAE.
 
@@ -142,75 +259,45 @@ Task: Provide step-by-step analysis:
 3. Scientific explanation
 4. Specific recommendations
 
-Analysis:"""
+Think step-by-step and show your reasoning:"""
 
     try:
-        api_key = st.secrets.get("cerebras", {}).get("api_key", "")
+        # Use Hugging Face Inference API
+        client = InferenceClient(token=st.secrets.get("HF_TOKEN", ""))
         
-        if not api_key:
-            raise Exception("Cerebras API key not configured")
+        # Generate response using text_generation
+        response = client.text_generation(
+            prompt,
+            model="LLM360/K2-Think",
+            max_new_tokens=2048,
+            temperature=0.7,
+            return_full_text=False,
+            stream=False
+        )
         
-        # Try multiple model name variants
-        model_names = ["k2-think", "k2think", "K2-Think", "llm360/k2-think", "llama3.3-70b"]
+        ai_response = response
         
-        last_error = None
-        for model_name in model_names:
-            try:
-                response = requests.post(
-                    "https://api.cerebras.ai/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": model_name,
-                        "messages": [
-                            {"role": "system", "content": "You are an expert environmental scientist specializing in desertification analysis with strong reasoning capabilities."},
-                            {"role": "user", "content": prompt}
-                        ],
-                        "max_tokens": 2048,
-                        "temperature": 0.7
-                    },
-                    timeout=30
-                )
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    ai_response = result['choices'][0]['message']['content']
-                    
-                    # Parse risk level
-                    risk = "Medium"
-                    response_lower = ai_response.lower()
-                    if any(word in response_lower for word in ["high risk", "severe", "critical"]):
-                        risk = "High"
-                    elif any(word in response_lower for word in ["low risk", "stable", "minimal"]):
-                        risk = "Low"
-                    
-                    # Format trace
-                    model_display = "K2-Think" if "k2" in model_name.lower() else model_name
-                    trace = [
-                        f"🤖 **{model_display} Analysis for {region}**",
-                        f"📊 **Input Data:**",
-                        f"  - NDVI: **{ndvi_val:.3f}**",
-                        f"  - Soil Moisture: **{soil_val:.2f} mm**",
-                        "",
-                        "🧠 **AI Reasoning:**",
-                        ai_response
-                    ]
-                    
-                    return risk, trace, ai_response
-                else:
-                    last_error = f"Model {model_name}: Status {response.status_code}"
-                    continue  # Try next model
-                    
-            except Exception as e:
-                last_error = f"Model {model_name}: {str(e)}"
-                continue  # Try next model
+        # Parse risk level
+        risk = "Medium"
+        response_lower = ai_response.lower()
+        if any(word in response_lower for word in ["high risk", "severe", "critical"]):
+            risk = "High"
+        elif any(word in response_lower for word in ["low risk", "stable", "minimal"]):
+            risk = "Low"
         
-        # If all models failed, raise the last error
-        if last_error:
-            raise Exception(f"All models failed. Last error: {last_error}")
-            
+        # Format trace
+        trace = [
+            f"🤖 **K2-Think Analysis for {region}**",
+            f"📊 **Input Data:**",
+            f"  - NDVI: **{ndvi_val:.3f}**",
+            f"  - Soil Moisture: **{soil_val:.2f} mm**",
+            "",
+            "🧠 **K2-Think Reasoning:**",
+            ai_response
+        ]
+        
+        return risk, trace, ai_response
+        
     except Exception as e:
         st.warning(f"⚠️ K2-Think unavailable: {str(e)}")
         
