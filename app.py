@@ -5,7 +5,7 @@ import json
 import tempfile
 import geemap.foliumap as geemap
 import datetime
-from huggingface_hub import InferenceClient
+import requests
 
 # --- 1. AUTHENTICATE AND INITIALIZE EARTH ENGINE ---
 # This block must be at the top.
@@ -126,10 +126,8 @@ def get_historical_ndvi(_geometry):
         return pd.Series(values, index=dates)
 
 
-
-# --- 4. AI REASONING AND PREDICTION ---
 def k2_think_reasoning(ndvi_val, soil_val, region):
-    """K2-Think AI Reasoning for Environmental Analysis"""
+    """K2-Think AI Reasoning via Cerebras API"""
     
     prompt = f"""You are an environmental scientist analyzing desertification risk in the UAE.
 
@@ -138,78 +136,92 @@ Current Environmental Data:
 - Vegetation Index (NDVI): {ndvi_val:.4f} (range: -1 to 1, where >0.2 is healthy vegetation)
 - Soil Moisture: {soil_val:.2f} mm (typical range: 5-30 mm)
 
-Task: Analyze this data step-by-step and provide:
-1. Desertification risk assessment (High/Medium/Low)
-2. Your reasoning process showing how you reached this conclusion
-3. Scientific explanation of the environmental conditions
-4. Specific recommendations for land management
+Task: Provide step-by-step analysis:
+1. Desertification risk level (High/Medium/Low)
+2. Your reasoning process
+3. Scientific explanation
+4. Specific recommendations
 
 Analysis:"""
 
     try:
-        client = InferenceClient(token=st.secrets.get("HF_TOKEN", ""))
+        api_key = st.secrets.get("CEREBRAS_API_KEY", "")
         
-        # Use text_generation for better compatibility
-        response = client.text_generation(
-            prompt,
-            model="LLM360/K2-Think",
-            max_new_tokens=1024,
-            temperature=0.7,
-            return_full_text=False
+        if not api_key:
+            raise Exception("Cerebras API key not configured")
+        
+        response = requests.post(
+            "https://api.cerebras.ai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "k2-think",
+                "messages": [
+                    {"role": "system", "content": "You are an expert environmental scientist specializing in desertification analysis."},
+                    {"role": "user", "content": prompt}
+                ],
+                "max_tokens": 2048,
+                "temperature": 0.7
+            },
+            timeout=30
         )
         
-        ai_response = response
-        
-        # Parse risk level
-        risk = "Medium"
-        response_lower = ai_response.lower()
-        if "high risk" in response_lower or "severe" in response_lower or "critical" in response_lower:
-            risk = "High"
-        elif "low risk" in response_lower or "stable" in response_lower or "minimal" in response_lower:
-            risk = "Low"
-        
-        # Format trace
-        trace = [
-            f"🤖 **K2-Think Analysis for {region}**",
-            f"📊 **Input Data:**",
-            f"  - NDVI: **{ndvi_val:.3f}**",
-            f"  - Soil Moisture: **{soil_val:.2f} mm**",
-            "",
-            "🧠 **K2-Think Reasoning:**",
-            ai_response
-        ]
-        
-        return risk, trace, ai_response
-        
+        if response.status_code == 200:
+            result = response.json()
+            ai_response = result['choices'][0]['message']['content']
+            
+            # Parse risk level
+            risk = "Medium"
+            response_lower = ai_response.lower()
+            if any(word in response_lower for word in ["high risk", "severe", "critical"]):
+                risk = "High"
+            elif any(word in response_lower for word in ["low risk", "stable", "minimal"]):
+                risk = "Low"
+            
+            # Format trace
+            trace = [
+                f"🤖 **K2-Think Analysis for {region}**",
+                f"📊 **Input Data:**",
+                f"  - NDVI: **{ndvi_val:.3f}**",
+                f"  - Soil Moisture: **{soil_val:.2f} mm**",
+                "",
+                "🧠 **K2-Think Reasoning:**",
+                ai_response
+            ]
+            
+            return risk, trace, ai_response
+        else:
+            raise Exception(f"API returned status {response.status_code}: {response.text}")
+            
     except Exception as e:
-        st.error(f"🔍 K2-Think Error: {type(e).__name__}: {str(e)}")
-        st.warning(f"⚠️ K2-Think unavailable, using fallback")
+        st.warning(f"⚠️ K2-Think unavailable: {str(e)}")
         
-        # Fallback logic (your current rule-based system)
+        # Fallback to rule-based system
         trace = [
-            f"Initializing analysis for **{region}**.",
-            f"Live Satellite Data:",
-            f"  - Average Vegetation Index (NDVI): **{ndvi_val:.3f}**",
-            f"  - Average Soil Moisture (SSM): **{soil_val:.2f} mm**"
+            f"Analyzing {region}...",
+            f"NDVI: {ndvi_val:.3f}, Soil Moisture: {soil_val:.2f} mm"
         ]
         
         risk = "Low"
         if ndvi_val < 0.1 or soil_val < 10:
             risk = "High"
-            trace.append("CRITICAL: Vegetation health and soil moisture are dangerously low.")
+            trace.append("⚠️ Critical vegetation stress detected")
         elif ndvi_val < 0.15 or soil_val < 20:
             risk = "Medium"
-            trace.append("WARNING: Indicators show moderate stress on the ecosystem.")
+            trace.append("⚠️ Moderate environmental stress")
         else:
-            trace.append("STABLE: Current environmental indicators are within a healthy range.")
+            trace.append("✅ Stable conditions")
         
         recommendations = {
-            "High": "- **Urgent Action:** Implement immediate water conservation measures.\n- **Intervention:** Begin soil restoration projects and use of drought-resistant seeds.",
-            "Medium": "- **Monitoring:** Increase frequency of soil and vegetation monitoring.\n- **Precaution:** Promote water-saving agricultural techniques.",
-            "Low": "- **Maintenance:** Continue sustainable land management practices.\n- **Oversight:** Maintain regular environmental monitoring schedules."
-        }
+            "High": "**Urgent interventions:** Water conservation, soil restoration, drought-resistant planting",
+            "Medium": "**Preventive actions:** Increase monitoring, promote water efficiency, protect vegetation",
+            "Low": "**Maintenance:** Continue sustainable practices, regular monitoring"
+        }[risk]
         
-        return risk, trace, recommendations[risk]
+        return risk, trace, recommendations
+
 
 # --- 5. MAIN APP LAYOUT AND VISUALIZATION ---
 st.title(f"K2-DesertGuard: Live Environmental Monitor for {region_name}")
