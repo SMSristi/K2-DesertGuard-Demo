@@ -263,7 +263,13 @@ Think step-by-step and show your reasoning:"""
 
     try:
         # Use Hugging Face Inference API
-        client = InferenceClient(token=st.secrets.get("HF_TOKEN", ""))
+        # Safe access to token
+        hf_token = st.secrets.get("huggingface", {}).get("token", "")
+        
+        if not hf_token:
+            raise Exception("Hugging Face token not configured")
+        
+        client = InferenceClient(token=hf_token)
         
         # Generate response using text_generation
         response = client.text_generation(
