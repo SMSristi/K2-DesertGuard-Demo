@@ -411,13 +411,14 @@ def display_analysis_results(ndvi_value, soil_moisture, full_ai_response, model_
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Detailed AI Reasoning (Collapsible) - Contains mathematical reasoning
+    # Detailed AI Reasoning (Collapsible) - FIXED: Added explicit dark text color
     with st.expander("🧠 **Detailed AI Reasoning & Mathematical Analysis**", expanded=False):
         st.markdown(f"""
             <div style='background-color: #f8f9fa; 
                         padding: 1.5rem; 
                         border-radius: 8px; 
                         border-left: 4px solid #667eea;
+                        color: #1a1a1a;
                         font-size: 0.95rem;
                         line-height: 1.6;'>
                 {reasoning.replace(chr(10), '<br>')}
@@ -432,7 +433,7 @@ def display_analysis_results(ndvi_value, soil_moisture, full_ai_response, model_
     action_items = extract_bullet_points(recommendations)
     
     if action_items and len(action_items) >= 3:
-        # Display as styled cards
+        # Display as styled cards - FIXED: Added explicit dark text color
         for i, item in enumerate(action_items, 1):
             # Determine icon based on content
             icon = "🔧"
@@ -451,17 +452,19 @@ def display_analysis_results(ndvi_value, soil_moisture, full_ai_response, model_
                             margin: 0.6rem 0; 
                             border-radius: 8px; 
                             border-left: 4px solid #764ba2;
+                            color: #1a1a1a;
                             box-shadow: 0 2px 4px rgba(0,0,0,0.05);'>
                     <strong style='color: #764ba2;'>{icon} {i}.</strong> {item}
                 </div>
             """, unsafe_allow_html=True)
     else:
-        # Fallback: show recommendations as formatted text
+        # Fallback: show recommendations as formatted text - FIXED: Added explicit dark text color
         st.markdown(f"""
             <div style='background-color: #f8f9fa; 
                         padding: 1.5rem; 
                         border-radius: 8px;
-                        border-left: 4px solid #764ba2;'>
+                        border-left: 4px solid #764ba2;
+                        color: #1a1a1a;'>
                 {recommendations.replace(chr(10), '<br>')}
             </div>
         """, unsafe_allow_html=True)
