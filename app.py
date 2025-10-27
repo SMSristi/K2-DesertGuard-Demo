@@ -42,6 +42,7 @@ map_center = [lat, lon]
 region_geometry = ee.Geometry.Point(lon, lat).buffer(20000)
 
 st.sidebar.info("This dashboard uses real satellite data from Google Earth Engine. Select a region to update the analysis.")
+st.sidebar.markdown("---")
 
 # AI Model selection in sidebar
 st.sidebar.markdown("### 🤖 AI Model Selection")
@@ -56,14 +57,6 @@ model_choice = st.sidebar.selectbox(
     index=0,  # Default to Qwen2.5 (closest to K2-Think)
     help="K2-Think is based on Qwen2.5-32B. Using the base model provides similar reasoning capabilities."
 )
-
-st.sidebar.info("""
-**ℹ️ About Models:**
-- **Qwen2.5-32B**: Base model for K2-Think with excellent reasoning
-- **Llama-3.3-70B**: Larger model with strong capabilities
-- **K2-Think variants**: Attempts direct K2-Think access
-""")
-
 
 
 # --- 3. EARTH ENGINE DATA ANALYSIS FUNCTIONS ---
@@ -403,7 +396,6 @@ with col4:
     st.markdown("#### Recommendations")
     st.info(recommendations)
 
-st.sidebar.markdown("---")
 st.sidebar.info("""
 **ℹ️ About Models:**
 - **Qwen2.5-32B**: Base model for K2-Think with excellent reasoning
