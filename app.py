@@ -128,8 +128,6 @@ def get_historical_ndvi(_geometry):
 
 def k2_think_reasoning(ndvi_val, soil_val, region):
     """K2-Think AI Reasoning via Cerebras API"""
-    st.write("All secrets:", list(st.secrets.keys()))
-    st.write("Has CEREBRAS_API_KEY:", "CEREBRAS_API_KEY" in st.secrets)
     
     prompt = f"""You are an environmental scientist analyzing desertification risk in the UAE.
 
@@ -152,50 +150,66 @@ Analysis:"""
         if not api_key:
             raise Exception("Cerebras API key not configured")
         
-        response = requests.post(
-            "https://api.cerebras.ai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": "k2-think",
-                "messages": [
-                    {"role": "system", "content": "You are an expert environmental scientist specializing in desertification analysis."},
-                    {"role": "user", "content": prompt}
-                ],
-                "max_tokens": 2048,
-                "temperature": 0.7
-            },
-            timeout=30
-        )
+        # Try multiple model name variants
+        model_names = ["k2-think", "k2think", "K2-Think", "llm360/k2-think", "llama3.3-70b"]
         
-        if response.status_code == 200:
-            result = response.json()
-            ai_response = result['choices'][0]['message']['content']
-            
-            # Parse risk level
-            risk = "Medium"
-            response_lower = ai_response.lower()
-            if any(word in response_lower for word in ["high risk", "severe", "critical"]):
-                risk = "High"
-            elif any(word in response_lower for word in ["low risk", "stable", "minimal"]):
-                risk = "Low"
-            
-            # Format trace
-            trace = [
-                f"🤖 **K2-Think Analysis for {region}**",
-                f"📊 **Input Data:**",
-                f"  - NDVI: **{ndvi_val:.3f}**",
-                f"  - Soil Moisture: **{soil_val:.2f} mm**",
-                "",
-                "🧠 **K2-Think Reasoning:**",
-                ai_response
-            ]
-            
-            return risk, trace, ai_response
-        else:
-            raise Exception(f"API returned status {response.status_code}: {response.text}")
+        last_error = None
+        for model_name in model_names:
+            try:
+                response = requests.post(
+                    "https://api.cerebras.ai/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": model_name,
+                        "messages": [
+                            {"role": "system", "content": "You are an expert environmental scientist specializing in desertification analysis with strong reasoning capabilities."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        "max_tokens": 2048,
+                        "temperature": 0.7
+                    },
+                    timeout=30
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    ai_response = result['choices'][0]['message']['content']
+                    
+                    # Parse risk level
+                    risk = "Medium"
+                    response_lower = ai_response.lower()
+                    if any(word in response_lower for word in ["high risk", "severe", "critical"]):
+                        risk = "High"
+                    elif any(word in response_lower for word in ["low risk", "stable", "minimal"]):
+                        risk = "Low"
+                    
+                    # Format trace
+                    model_display = "K2-Think" if "k2" in model_name.lower() else model_name
+                    trace = [
+                        f"🤖 **{model_display} Analysis for {region}**",
+                        f"📊 **Input Data:**",
+                        f"  - NDVI: **{ndvi_val:.3f}**",
+                        f"  - Soil Moisture: **{soil_val:.2f} mm**",
+                        "",
+                        "🧠 **AI Reasoning:**",
+                        ai_response
+                    ]
+                    
+                    return risk, trace, ai_response
+                else:
+                    last_error = f"Model {model_name}: Status {response.status_code}"
+                    continue  # Try next model
+                    
+            except Exception as e:
+                last_error = f"Model {model_name}: {str(e)}"
+                continue  # Try next model
+        
+        # If all models failed, raise the last error
+        if last_error:
+            raise Exception(f"All models failed. Last error: {last_error}")
             
     except Exception as e:
         st.warning(f"⚠️ K2-Think unavailable: {str(e)}")
