@@ -144,30 +144,28 @@ Task: Analyze this data step-by-step and provide:
 3. Scientific explanation of the environmental conditions
 4. Specific recommendations for land management
 
-Think through this carefully and show your reasoning."""
+Analysis:"""
 
     try:
-        client = InferenceClient(
+        client = InferenceClient(token=st.secrets.get("HF_TOKEN", ""))
+        
+        # Use text_generation for better compatibility
+        response = client.text_generation(
+            prompt,
             model="LLM360/K2-Think",
-            token=st.secrets.get("HF_TOKEN", "")
+            max_new_tokens=1024,
+            temperature=0.7,
+            return_full_text=False
         )
         
-        messages = [{"role": "user", "content": prompt}]
-        
-        response = client.chat_completion(
-            messages=messages,
-            max_tokens=2048,
-            temperature=0.7
-        )
-        
-        ai_response = response.choices[0].message.content
+        ai_response = response
         
         # Parse risk level
         risk = "Medium"
         response_lower = ai_response.lower()
-        if "high risk" in response_lower or "severe" in response_lower:
+        if "high risk" in response_lower or "severe" in response_lower or "critical" in response_lower:
             risk = "High"
-        elif "low risk" in response_lower or "stable" in response_lower:
+        elif "low risk" in response_lower or "stable" in response_lower or "minimal" in response_lower:
             risk = "Low"
         
         # Format trace
@@ -184,7 +182,7 @@ Think through this carefully and show your reasoning."""
         return risk, trace, ai_response
         
     except Exception as e:
-        st.error(f"🔍 Detailed error: {str(e)}")  # Show the actual error
+        st.error(f"🔍 K2-Think Error: {type(e).__name__}: {str(e)}")
         st.warning(f"⚠️ K2-Think unavailable, using fallback")
         
         # Fallback logic (your current rule-based system)
