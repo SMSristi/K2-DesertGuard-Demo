@@ -49,7 +49,7 @@ st.sidebar.markdown("### 🤖 AI Model Selection")
 model_choice = st.sidebar.selectbox(
     "Select Reasoning Model",
     options=[
-        "Llama-3.3-70B",
+        "Llama-3.3-70B (Demo)",
         "Qwen2.5-32B (K2-Think base)",
         "Llama-3.1-70B", 
         "Try K2-Think variants"
@@ -158,7 +158,7 @@ Analysis:"""
         if "Qwen2.5-32B" in model_choice:
             models = ["qwen2.5-32b", "qwen-2.5-32b"]
             display_name = "Qwen2.5-32B (K2-Think Base)"
-        elif "Llama-3.3-70B" in model_choice:
+        elif "Llama-3.3-70B (for Demo)" in model_choice:
             models = ["llama-3.3-70b", "llama3.3-70b"]
             display_name = "Llama 3.3 70B (for Demo)"
         elif "Llama-3.1-70B" in model_choice:
