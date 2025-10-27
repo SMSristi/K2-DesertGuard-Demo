@@ -128,6 +128,8 @@ def get_historical_ndvi(_geometry):
 
 def k2_think_reasoning(ndvi_val, soil_val, region):
     """K2-Think AI Reasoning via Cerebras API"""
+    st.write("All secrets:", list(st.secrets.keys()))
+    st.write("Has CEREBRAS_API_KEY:", "CEREBRAS_API_KEY" in st.secrets)
     
     prompt = f"""You are an environmental scientist analyzing desertification risk in the UAE.
 
