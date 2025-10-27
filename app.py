@@ -381,20 +381,35 @@ with col2:
 st.markdown("---")
 
 # Historical chart and AI reasoning
-col3, col4 = st.columns([2, 1])
+# AI Reasoning (LARGE) and Historical chart (SMALL) - SWAPPED!
+col_ai, col_hist = st.columns([2, 1])  # AI gets 2x space
 
-with col3:
-    st.markdown("#### Historical Vegetation Trend (12 Months)")
+with col_ai:
+    st.markdown("### 🤖 AI-Powered Environmental Analysis")
+    
+    # Prominent risk indicator with color
+    if risk_level == "High":
+        st.error(f"⚠️ **{risk_level} Desertification Risk Detected**")
+    elif risk_level == "Medium":
+        st.warning(f"⚠️ **{risk_level} Desertification Risk**")
+    else:
+        st.success(f"✅ **{risk_level} Risk - Stable Conditions**")
+    
+    # AI reasoning - expanded by default
+    with st.expander("🧠 **View Detailed AI Reasoning Process**", expanded=True):
+        for step in reasoning_trace:
+            st.write(step)
+    
+    # Recommendations below reasoning
+    st.markdown("#### 💡 Recommendations")
+    st.info(recommendations)
+
+with col_hist:
+    st.markdown("### 📈 Historical Trend")
+    st.caption("12-Month NDVI Pattern")
     historical_ndvi_data = get_historical_ndvi(region_geometry)
     st.line_chart(historical_ndvi_data)
 
-with col4:
-    st.markdown("#### AI Reasoning")
-    for step in reasoning_trace:
-        st.write(step)
-    
-    st.markdown("#### Recommendations")
-    st.info(recommendations)
 
 st.sidebar.info("""
 **ℹ️ About Models:**
