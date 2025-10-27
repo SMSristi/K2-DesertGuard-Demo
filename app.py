@@ -147,7 +147,7 @@ Task: Provide step-by-step analysis:
 Analysis:"""
 
     try:
-        api_key = st.secrets.get("CEREBRAS_API_KEY", "")
+        api_key = st.secrets.get("cerebras", {}).get("api_key", "")
         
         if not api_key:
             raise Exception("Cerebras API key not configured")
