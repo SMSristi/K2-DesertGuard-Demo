@@ -184,7 +184,8 @@ Think through this carefully and show your reasoning."""
         return risk, trace, ai_response
         
     except Exception as e:
-        st.warning(f"⚠️ K2-Think unavailable, using fallback: {str(e)}")
+        st.error(f"🔍 Detailed error: {str(e)}")  # Show the actual error
+        st.warning(f"⚠️ K2-Think unavailable, using fallback")
         
         # Fallback logic (your current rule-based system)
         trace = [
