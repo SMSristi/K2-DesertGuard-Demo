@@ -160,7 +160,7 @@ Analysis:"""
             display_name = "Qwen2.5-32B (K2-Think Base)"
         elif "Llama-3.3-70B" in model_choice:
             models = ["llama-3.3-70b", "llama3.3-70b"]
-            display_name = "Llama 3.3 70B"
+            display_name = "Llama 3.3 70B (for Demo)"
         elif "Llama-3.1-70B" in model_choice:
             models = ["llama-3.1-70b", "llama3.1-70b"]
             display_name = "Llama 3.1 70B"
