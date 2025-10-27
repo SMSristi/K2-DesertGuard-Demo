@@ -49,13 +49,13 @@ st.sidebar.markdown("### 🤖 AI Model Selection")
 model_choice = st.sidebar.selectbox(
     "Select Reasoning Model",
     options=[
-        "Qwen2.5-32B (K2-Think base)",
         "Llama-3.3-70B",
+        "Qwen2.5-32B (K2-Think base)",
         "Llama-3.1-70B", 
         "Try K2-Think variants"
     ],
     index=0,  # Default to Qwen2.5 (closest to K2-Think)
-    help="K2-Think is based on Qwen2.5-32B. Using the base model provides similar reasoning capabilities."
+    help="Using Llama-3.3-70B as demo."
 )
 
 
