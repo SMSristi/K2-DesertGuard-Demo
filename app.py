@@ -7,6 +7,8 @@ import geemap.foliumap as geemap
 import datetime
 import requests
 from huggingface_hub import InferenceClient
+import re
+
 
 
 # --- 1. AUTHENTICATE AND INITIALIZE EARTH ENGINE ---
@@ -23,6 +25,7 @@ try:
 except Exception as e:
     st.error("Google Earth Engine authentication failed. Please ensure your GEE secrets are configured correctly in Streamlit.")
     st.stop()
+
 
 
 # --- 2. APP CONFIGURATION AND SIDEBAR ---
@@ -54,12 +57,81 @@ model_choice = st.sidebar.selectbox(
         "Llama-3.1-70B", 
         "Try K2-Think variants"
     ],
-    index=0,  # Default to Qwen2.5 (closest to K2-Think)
+    index=0,
     help="Using Llama-3.3-70B as demo."
 )
 
 
-# --- 3. EARTH ENGINE DATA ANALYSIS FUNCTIONS ---
+
+# --- 3. AI RESPONSE PARSING FUNCTIONS ---
+def parse_ai_response(full_response):
+    """
+    Separates reasoning from recommendations following DeepSeek-R1 best practices
+    Returns: (reasoning, recommendations, risk_level)
+    """
+    # Extract risk level from response
+    risk_pattern = r'(?i)(high|medium|low)\s*risk'
+    risk_match = re.search(risk_pattern, full_response)
+    risk_level = risk_match.group(1).upper() if risk_match else "MEDIUM"
+    
+    # Split response into reasoning and recommendations
+    rec_indicators = [
+        "recommendations?:",
+        "suggested actions?:",
+        "action items?:",
+        "key recommendations?:",
+        "what to do:",
+        "management strategies?:",
+        "mitigation measures?:"
+    ]
+    
+    split_point = None
+    for indicator in rec_indicators:
+        match = re.search(rf'{indicator}', full_response, re.IGNORECASE)
+        if match:
+            split_point = match.start()
+            break
+    
+    if split_point:
+        reasoning = full_response[:split_point].strip()
+        recommendations = full_response[split_point:].strip()
+    else:
+        # Try to find numbered lists or bullet points in last 40%
+        lines = full_response.split('\n')
+        for i in range(len(lines) - 1, max(0, int(len(lines) * 0.6)), -1):
+            if re.match(r'^\d+\.', lines[i].strip()) or lines[i].strip().startswith('-') or lines[i].strip().startswith('•'):
+                reasoning = '\n'.join(lines[:i]).strip()
+                recommendations = '\n'.join(lines[i:]).strip()
+                break
+        else:
+            # Final fallback: use last 30% as recommendations
+            split_at = int(len(full_response) * 0.7)
+            reasoning = full_response[:split_at].strip()
+            recommendations = full_response[split_at:].strip()
+    
+    return reasoning, recommendations, risk_level
+
+
+def extract_bullet_points(text):
+    """Extract actionable bullet points from recommendations"""
+    lines = text.split('\n')
+    bullets = []
+    
+    for line in lines:
+        line = line.strip()
+        # Match numbered lists, bullet points, or short action statements
+        if re.match(r'^\d+\.', line):  # Numbered list
+            bullets.append(re.sub(r'^\d+\.\s*', '', line))
+        elif line.startswith('-') or line.startswith('•') or line.startswith('*'):
+            bullets.append(line.lstrip('-•* ').strip())
+        elif line and len(line) > 15 and len(line) < 200 and not line.endswith(':'):
+            bullets.append(line)
+    
+    return bullets[:8] if bullets else None
+
+
+
+# --- 4. EARTH ENGINE DATA ANALYSIS FUNCTIONS ---
 @st.cache_data
 def get_live_data(_geometry):
     soil_moisture_collection = ee.ImageCollection("NASA_USDA/HSL/SMAP10KM_soil_moisture")
@@ -77,6 +149,7 @@ def get_live_data(_geometry):
     ).get('ssm')
     
     return avg_ndvi.getInfo(), avg_soil_moisture.getInfo()
+
 
 
 @st.cache_data
@@ -129,7 +202,8 @@ def get_historical_ndvi(_geometry):
         return pd.Series(values, index=dates)
 
 
-# --- 4. AI REASONING WITH MODEL SELECTION ---
+
+# --- 5. AI REASONING WITH MODEL SELECTION ---
 def k2_think_reasoning(ndvi_val, soil_val, region, model_choice):
     """AI Reasoning with selectable models"""
     
@@ -140,11 +214,15 @@ Current Environmental Data:
 - Vegetation Index (NDVI): {ndvi_val:.4f} (range: -1 to 1, where >0.2 is healthy vegetation)
 - Soil Moisture: {soil_val:.2f} mm (typical range: 5-30 mm)
 
-Task: Provide step-by-step analysis:
-1. Desertification risk level (High/Medium/Low)
-2. Your reasoning process
-3. Scientific explanation
-4. Specific recommendations
+Task: Provide comprehensive step-by-step analysis with:
+1. MATHEMATICAL REASONING - Show threshold comparisons and calculations
+2. RISK ASSESSMENT - Determine desertification risk level (High/Medium/Low)
+3. SCIENTIFIC EXPLANATION - Explain the ecological implications
+4. SPECIFIC RECOMMENDATIONS - Provide actionable steps
+
+Format your response with clear sections:
+- Start with detailed reasoning and mathematical analysis
+- End with a "Recommendations:" section containing actionable items
 
 Analysis:"""
 
@@ -157,15 +235,15 @@ Analysis:"""
         # Map selection to model names
         if "Qwen2.5-32B" in model_choice:
             models = ["qwen2.5-32b", "qwen-2.5-32b"]
-            display_name = "Qwen2.5-32B (K2-Think Base)"
+            display_name = "Qwen2.5-32B"
         elif "Llama-3.3-70B" in model_choice:
             models = ["llama-3.3-70b", "llama3.3-70b"]
-            display_name = "Llama 3.3 70B (for Demo)"
+            display_name = "Llama-3.3-70B"
         elif "Llama-3.1-70B" in model_choice:
             models = ["llama-3.1-70b", "llama3.1-70b"]
-            display_name = "Llama 3.1 70B"
+            display_name = "Llama-3.1-70B"
         else:  # Try K2-Think variants
-            models = ["llm360/k2-32b", "k2-think-32b", "k2-think", "LLM360/K2-Think", "llm360-k2-think", "cerebras/k2-think"]
+            models = ["llm360/k2-32b", "k2-think-32b"]
             display_name = "K2-Think"
         
         last_error = None
@@ -180,7 +258,7 @@ Analysis:"""
                     json={
                         "model": model_name,
                         "messages": [
-                            {"role": "system", "content": "You are an expert environmental scientist specializing in desertification analysis."},
+                            {"role": "system", "content": "You are an expert environmental scientist specializing in desertification analysis. Show your mathematical reasoning and calculations."},
                             {"role": "user", "content": prompt}
                         ],
                         "max_tokens": 2048,
@@ -192,25 +270,7 @@ Analysis:"""
                 if response.status_code == 200:
                     result = response.json()
                     ai_response = result['choices'][0]['message']['content']
-                    
-                    # Parse risk
-                    risk = "Medium"
-                    if any(word in ai_response.lower() for word in ["high risk", "severe", "critical"]):
-                        risk = "High"
-                    elif any(word in ai_response.lower() for word in ["low risk", "stable", "minimal"]):
-                        risk = "Low"
-                    
-                    trace = [
-                        f"🤖 **{display_name} Analysis for {region}**",
-                        f"📊 **Input Data:**",
-                        f"  - NDVI: **{ndvi_val:.3f}**",
-                        f"  - Soil Moisture: **{soil_val:.2f} mm**",
-                        "",
-                        "🧠 **AI Reasoning:**",
-                        ai_response
-                    ]
-                    
-                    return risk, trace, ai_response
+                    return ai_response, display_name
                 else:
                     last_error = f"{model_name}: Status {response.status_code}"
                     continue
@@ -225,133 +285,237 @@ Analysis:"""
         st.warning(f"⚠️ AI model unavailable: {str(e)}")
         st.info("📌 Using rule-based environmental analysis")
         
-        # Fallback
-        trace = [
-            f"Analyzing {region}...",
-            f"NDVI: {ndvi_val:.3f}, Soil Moisture: {soil_val:.2f} mm"
-        ]
+        # Fallback response with clear structure
+        reasoning_part = f"""**Step-by-Step Analysis for {region}:**
+
+**1. MATHEMATICAL ASSESSMENT:**
+- NDVI Value: {ndvi_val:.3f}
+- Threshold Comparison: {"BELOW" if ndvi_val < 0.15 else "ABOVE"} healthy threshold (0.15)
+- Soil Moisture: {soil_val:.2f} mm
+- Threshold Comparison: {"BELOW" if soil_val < 20 else "ABOVE"} adequate level (20mm)
+
+**2. RISK CALCULATION:**
+"""
         
-        risk = "Low"
         if ndvi_val < 0.1 or soil_val < 10:
-            risk = "High"
-            trace.append("⚠️ Critical vegetation stress detected")
+            risk = "HIGH"
+            reasoning_part += "Critical stress: NDVI < 0.1 OR Soil Moisture < 10mm\n"
+            reasoning_part += "Result: **HIGH RISK** of desertification\n\n"
+            reasoning_part += "**3. SCIENTIFIC EXPLANATION:**\n"
+            reasoning_part += "Vegetation is severely stressed with minimal photosynthetic activity. Soil water deficit prevents plant survival. Immediate intervention required to prevent irreversible land degradation.\n\n"
         elif ndvi_val < 0.15 or soil_val < 20:
-            risk = "Medium"
-            trace.append("⚠️ Moderate environmental stress")
+            risk = "MEDIUM"
+            reasoning_part += "Moderate stress: 0.1 ≤ NDVI < 0.15 OR 10mm ≤ Soil Moisture < 20mm\n"
+            reasoning_part += "Result: **MEDIUM RISK** of desertification\n\n"
+            reasoning_part += "**3. SCIENTIFIC EXPLANATION:**\n"
+            reasoning_part += "Vegetation shows signs of stress with reduced vitality. Soil moisture is suboptimal, limiting plant growth. Preventive measures needed to avoid escalation.\n\n"
         else:
-            trace.append("✅ Stable conditions")
+            risk = "LOW"
+            reasoning_part += "Healthy conditions: NDVI ≥ 0.15 AND Soil Moisture ≥ 20mm\n"
+            reasoning_part += "Result: **LOW RISK** - Stable ecosystem\n\n"
+            reasoning_part += "**3. SCIENTIFIC EXPLANATION:**\n"
+            reasoning_part += "Vegetation health is adequate with sufficient photosynthetic activity. Soil moisture supports plant growth. Continue sustainable land management practices.\n\n"
         
-        recommendations = {
-            "High": "**Urgent interventions:** Water conservation, soil restoration, drought-resistant planting",
-            "Medium": "**Preventive actions:** Increase monitoring, promote water efficiency, protect vegetation",
-            "Low": "**Maintenance:** Continue sustainable practices, regular monitoring"
-        }[risk]
+        recommendations_part = """**Recommendations:**
+
+"""
         
-        return risk, trace, recommendations
+        if risk == "HIGH":
+            recommendations_part += """1. Implement emergency water conservation measures
+2. Begin immediate soil restoration with organic amendments
+3. Plant drought-resistant native species
+4. Establish grazing restrictions to allow recovery
+5. Install drip irrigation systems in critical areas
+6. Monitor weekly for changes"""
+        elif risk == "MEDIUM":
+            recommendations_part += """1. Increase monitoring frequency to bi-weekly
+2. Promote water efficiency in agriculture
+3. Protect existing vegetation from degradation
+4. Apply mulching to conserve soil moisture
+5. Introduce sustainable land management practices
+6. Plan for potential drought scenarios"""
+        else:
+            recommendations_part += """1. Continue current sustainable practices
+2. Maintain regular monthly monitoring
+3. Preserve biodiversity through conservation
+4. Educate community on land stewardship
+5. Document successful management strategies
+6. Prepare adaptive management plans"""
+        
+        full_response = reasoning_part + recommendations_part
+        
+        return full_response, "Rule-Based System"
 
 
-#When hugging face K2-think API will be provided
-# def k2_think_reasoning(ndvi_val, soil_val, region):
-#     """K2-Think AI Reasoning via Hugging Face Inference"""
+
+# --- 6. DISPLAY FUNCTION FOLLOWING DEEPSEEK-R1 BEST PRACTICES ---
+def display_analysis_results(ndvi_value, soil_moisture, full_ai_response, model_name, region):
+    """Display results following DeepSeek-R1 and Claude best practices"""
     
-#     prompt = f"""You are an environmental scientist analyzing desertification risk in the UAE.
+    # Parse the AI response
+    reasoning, recommendations, risk_level = parse_ai_response(full_ai_response)
+    
+    # Risk badge styling
+    risk_colors = {
+        "HIGH": {"bg": "#ff4444", "border": "#cc0000", "text": "white"},
+        "MEDIUM": {"bg": "#ffaa00", "border": "#cc8800", "text": "white"},
+        "LOW": {"bg": "#44ff44", "border": "#00cc00", "text": "black"}
+    }
+    
+    color = risk_colors.get(risk_level, risk_colors["MEDIUM"])
+    
+    # Display header with risk badge
+    st.markdown(f"""
+        <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                    padding: 2rem; border-radius: 10px; margin-bottom: 1.5rem;'>
+            <h2 style='color: white; margin: 0; margin-bottom: 0.5rem;'>🤖 AI-Powered Environmental Analysis</h2>
+            <p style='color: rgba(255,255,255,0.9); margin: 0; margin-bottom: 1rem; font-size: 0.9rem;'>
+                Powered by <strong>{model_name}</strong> • Region: {region}
+            </p>
+            <div style='background: {color["bg"]}; 
+                        border: 3px solid {color["border"]}; 
+                        color: {color["text"]}; 
+                        padding: 0.75rem 1.5rem; 
+                        border-radius: 25px; 
+                        display: inline-block; 
+                        font-weight: bold;
+                        font-size: 1.2rem;
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.2);'>
+                🚨 Risk Level: {risk_level}
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Quick summary metrics
+    col1, col2 = st.columns(2)
+    with col1:
+        delta_text = "Critical" if ndvi_value < 0.05 else "Low" if ndvi_value < 0.15 else "Good"
+        delta_color = "inverse" if ndvi_value < 0.15 else "normal"
+        st.metric(
+            label="📊 NDVI Index", 
+            value=f"{ndvi_value:.3f}",
+            delta=delta_text,
+            delta_color=delta_color,
+            help="Normalized Difference Vegetation Index: measures vegetation health"
+        )
+    with col2:
+        delta_text = "Low" if soil_moisture < 15 else "Moderate" if soil_moisture < 25 else "Good"
+        delta_color = "inverse" if soil_moisture < 25 else "normal"
+        st.metric(
+            label="💧 Soil Moisture", 
+            value=f"{soil_moisture:.2f} mm",
+            delta=delta_text,
+            delta_color=delta_color,
+            help="Surface soil moisture content"
+        )
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Detailed AI Reasoning (Collapsible) - Contains mathematical reasoning
+    with st.expander("🧠 **Detailed AI Reasoning & Mathematical Analysis**", expanded=False):
+        st.markdown(f"""
+            <div style='background-color: #f8f9fa; 
+                        padding: 1.5rem; 
+                        border-radius: 8px; 
+                        border-left: 4px solid #667eea;
+                        font-size: 0.95rem;
+                        line-height: 1.6;'>
+                {reasoning.replace(chr(10), '<br>')}
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.caption("💡 This section shows the AI's step-by-step reasoning process, including mathematical calculations, threshold comparisons, and logical deductions that led to the risk assessment.")
+    
+    # Key Recommendations (Always Visible)
+    st.markdown("### 💡 Key Recommendations")
+    
+    action_items = extract_bullet_points(recommendations)
+    
+    if action_items and len(action_items) >= 3:
+        # Display as styled cards
+        for i, item in enumerate(action_items, 1):
+            # Determine icon based on content
+            icon = "🔧"
+            if any(word in item.lower() for word in ["water", "irrigation", "moisture"]):
+                icon = "💧"
+            elif any(word in item.lower() for word in ["plant", "vegetation", "species"]):
+                icon = "🌱"
+            elif any(word in item.lower() for word in ["monitor", "track", "observe"]):
+                icon = "📊"
+            elif any(word in item.lower() for word in ["soil", "restoration", "organic"]):
+                icon = "🌍"
+            
+            st.markdown(f"""
+                <div style='background: linear-gradient(90deg, #f8f9fa 0%, #e9ecef 100%); 
+                            padding: 1rem 1.2rem; 
+                            margin: 0.6rem 0; 
+                            border-radius: 8px; 
+                            border-left: 4px solid #764ba2;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.05);'>
+                    <strong style='color: #764ba2;'>{icon} {i}.</strong> {item}
+                </div>
+            """, unsafe_allow_html=True)
+    else:
+        # Fallback: show recommendations as formatted text
+        st.markdown(f"""
+            <div style='background-color: #f8f9fa; 
+                        padding: 1.5rem; 
+                        border-radius: 8px;
+                        border-left: 4px solid #764ba2;'>
+                {recommendations.replace(chr(10), '<br>')}
+            </div>
+        """, unsafe_allow_html=True)
+    
+    # Download option
+    st.markdown("<br>", unsafe_allow_html=True)
+    report = f"""
+K2-DesertGuard Environmental Analysis Report
+{'='*60}
 
-# Region: {region}
-# Current Environmental Data:
-# - Vegetation Index (NDVI): {ndvi_val:.4f} (range: -1 to 1, where >0.2 is healthy vegetation)
-# - Soil Moisture: {soil_val:.2f} mm (typical range: 5-30 mm)
+REGION: {region}
+RISK LEVEL: {risk_level}
+MODEL USED: {model_name}
+ANALYSIS DATE: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-# Task: Provide step-by-step analysis:
-# 1. Desertification risk level (High/Medium/Low)
-# 2. Your reasoning process
-# 3. Scientific explanation
-# 4. Specific recommendations
+{'='*60}
+ENVIRONMENTAL METRICS
+{'='*60}
+- NDVI (Vegetation Index): {ndvi_value:.3f}
+- Soil Moisture: {soil_moisture:.2f} mm
 
-# Think step-by-step and show your reasoning:"""
+{'='*60}
+DETAILED AI REASONING
+{'='*60}
+{reasoning}
 
-#     try:
-#         # Use Hugging Face Inference API
-#         # Safe access to token
-#         hf_token = st.secrets.get("huggingface", {}).get("token", "")
-        
-#         if not hf_token:
-#             raise Exception("Hugging Face token not configured")
-        
-#         client = InferenceClient(token=hf_token)
+{'='*60}
+RECOMMENDATIONS
+{'='*60}
+{recommendations}
 
-#         # Generate response using text_generation
-#         response = client.text_generation(
-#             prompt,
-#             model="LLM360/K2-Think",
-#             max_new_tokens=2048,
-#             temperature=0.7,
-#             return_full_text=False,
-#             stream=False
-#         )
-        
-#         ai_response = response
-        
-#         # Parse risk level
-#         risk = "Medium"
-#         response_lower = ai_response.lower()
-#         if any(word in response_lower for word in ["high risk", "severe", "critical"]):
-#             risk = "High"
-#         elif any(word in response_lower for word in ["low risk", "stable", "minimal"]):
-#             risk = "Low"
-        
-#         # Format trace
-#         trace = [
-#             f"🤖 **K2-Think Analysis for {region}**",
-#             f"📊 **Input Data:**",
-#             f"  - NDVI: **{ndvi_val:.3f}**",
-#             f"  - Soil Moisture: **{soil_val:.2f} mm**",
-#             "",
-#             "🧠 **K2-Think Reasoning:**",
-#             ai_response
-#         ]
-        
-#         return risk, trace, ai_response
-        
-#     except Exception as e:
-#         st.warning(f"⚠️ K2-Think unavailable: {str(e)}")
-        
-#         # Fallback to rule-based system
-#         trace = [
-#             f"Analyzing {region}...",
-#             f"NDVI: {ndvi_val:.3f}, Soil Moisture: {soil_val:.2f} mm"
-#         ]
-        
-#         risk = "Low"
-#         if ndvi_val < 0.1 or soil_val < 10:
-#             risk = "High"
-#             trace.append("⚠️ Critical vegetation stress detected")
-#         elif ndvi_val < 0.15 or soil_val < 20:
-#             risk = "Medium"
-#             trace.append("⚠️ Moderate environmental stress")
-#         else:
-#             trace.append("✅ Stable conditions")
-        
-#         recommendations = {
-#             "High": "**Urgent interventions:** Water conservation, soil restoration, drought-resistant planting",
-#             "Medium": "**Preventive actions:** Increase monitoring, promote water efficiency, protect vegetation",
-#             "Low": "**Maintenance:** Continue sustainable practices, regular monitoring"
-#         }[risk]
-        
-#         return risk, trace, recommendations
+{'='*60}
+Generated by K2-DesertGuard AI System
+Powered by {model_name}
+{'='*60}
+    """
+    
+    st.download_button(
+        label="📥 Download Full Analysis Report",
+        data=report,
+        file_name=f"k2_desertguard_{region.replace(' ', '_').lower()}_{datetime.datetime.now().strftime('%Y%m%d')}.txt",
+        mime="text/plain",
+        help="Download complete analysis including reasoning and recommendations"
+    )
 
-# --- 5. MAIN APP LAYOUT AND VISUALIZATION ---
+
+
+# --- 7. MAIN APP LAYOUT AND VISUALIZATION ---
 st.title(f"K2-DesertGuard: Live Environmental Monitor for {region_name}")
 st.caption("Powered by Google Earth Engine & Real-Time Satellite Imagery")
 
 # Fetch and process data
 avg_ndvi_value, avg_soil_moisture_value = get_live_data(region_geometry)
-risk_level, reasoning_trace, recommendations = k2_think_reasoning(avg_ndvi_value, avg_soil_moisture_value, region_name, model_choice)
-
-# Display live metrics
-col_a, col_b, col_c = st.columns(3)
-col_a.metric("Desertification Risk", risk_level)
-col_b.metric("Avg. Vegetation (NDVI)", f"{avg_ndvi_value:.3f}")
-col_c.metric("Avg. Soil Moisture", f"{avg_soil_moisture_value:.2f} mm")
+full_ai_response, model_name = k2_think_reasoning(avg_ndvi_value, avg_soil_moisture_value, region_name, model_choice)
 
 st.markdown("---")
 
@@ -380,42 +544,37 @@ with col2:
 
 st.markdown("---")
 
-# Historical chart and AI reasoning
-# AI Reasoning (LARGE) and Historical chart (SMALL) - SWAPPED!
-col_ai, col_hist = st.columns([2, 1])  # AI gets 2x space
+# AI Analysis (LARGE) and Historical chart (SMALL)
+col_ai, col_hist = st.columns([2.5, 1])  # AI gets 2.5x space
 
 with col_ai:
-    st.markdown("### 🤖 AI-Powered Environmental Analysis")
-    
-    # Prominent risk indicator with color
-    if risk_level == "High":
-        st.error(f"⚠️ **{risk_level} Desertification Risk Detected**")
-    elif risk_level == "Medium":
-        st.warning(f"⚠️ **{risk_level} Desertification Risk**")
-    else:
-        st.success(f"✅ **{risk_level} Risk - Stable Conditions**")
-    
-    # AI reasoning - expanded by default
-    with st.expander("🧠 **View Detailed AI Reasoning Process**", expanded=True):
-        for step in reasoning_trace:
-            st.write(step)
-    
-    # Recommendations below reasoning
-    st.markdown("#### 💡 Recommendations")
-    st.info(recommendations)
+    # Display the enhanced analysis
+    display_analysis_results(avg_ndvi_value, avg_soil_moisture_value, full_ai_response, model_name, region_name)
 
 with col_hist:
     st.markdown("### 📈 Historical Trend")
     st.caption("12-Month NDVI Pattern")
     historical_ndvi_data = get_historical_ndvi(region_geometry)
-    st.line_chart(historical_ndvi_data)
+    st.line_chart(historical_ndvi_data, use_container_width=True)
+    
+    # Add interpretation
+    if len(historical_ndvi_data) > 0:
+        avg_hist = historical_ndvi_data.mean()
+        trend = "improving" if avg_ndvi_value > avg_hist else "declining"
+        st.caption(f"📊 Current vs. 12-mo avg: {trend.upper()}")
 
-
+# Sidebar info
+st.sidebar.markdown("---")
 st.sidebar.info("""
-**ℹ️ About Models:**
-- **Qwen2.5-32B**: Base model for K2-Think with excellent reasoning
-- **Llama-3.3-70B**: Larger model with strong capabilities
-- **K2-Think variants**: Attempts direct K2-Think access
+**ℹ️ About Display:**
+- **Reasoning Section**: Expandable - shows mathematical calculations and step-by-step analysis
+- **Recommendations**: Always visible - actionable items for land managers
+- **No Duplication**: Each section serves a unique purpose
 
-**Note:** Using Cerebras API as Hugging Face Inference API doesn't support K2-Think's 32B model size for free tier deployment.
+**About Models:**
+- **Llama-3.3-70B**: Latest Llama model with strong reasoning
+- **Qwen2.5-32B**: Base model for K2-Think architecture
+- **K2-Think**: Specialized reasoning model (when available)
+
+**Note:** K2-Think demonstrates chain-of-thought reasoning similar to DeepSeek-R1, showing mathematical calculations and logical steps.
 """)
