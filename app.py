@@ -41,8 +41,9 @@ lat, lon = region_coords[region_name]
 map_center = [lat, lon]
 region_geometry = ee.Geometry.Point(lon, lat).buffer(20000)
 
+st.sidebar.info("This dashboard uses real satellite data from Google Earth Engine. Select a region to update the analysis.")
+
 # AI Model selection in sidebar
-st.sidebar.markdown("---")
 st.sidebar.markdown("### 🤖 AI Model Selection")
 model_choice = st.sidebar.selectbox(
     "Select Reasoning Model",
@@ -403,7 +404,6 @@ with col4:
     st.info(recommendations)
 
 st.sidebar.markdown("---")
-st.sidebar.info("This dashboard uses real satellite data from Google Earth Engine. Select a region to update the analysis.")
 st.sidebar.info("""
 **ℹ️ About Models:**
 - **Qwen2.5-32B**: Base model for K2-Think with excellent reasoning
